@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Product
-from .serializers import ProductSerializer
+from .models import Product, Purchase, Sales
+from .serializers import ProductSerializer, PurchaseSerializer, SaleSerializer
 from rest_framework.viewsets import ModelViewSet
 from rest_framework import status
 
@@ -34,3 +34,31 @@ class ProductModelViewSet(ModelViewSet):
     """
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+
+class PurchaseView(APIView):
+    def post(self, request, format=None):
+        """
+        仕入情報を登録する
+        """
+        serializer = PurchaseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status.HTTP_201_CREATED)
+
+class SalesView(APIView):
+    def post(self, request, format=None):
+        """
+        売上情報を登録する
+        """
+        serializer = SaleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # 在庫が売る分の数量を超えないかチェック
+        purchase = Purchase.objects.filter(product_id=request.data['product']).aggregate(quantity_sum=Coalesce(Sum('quantity'), 0)) # 在庫テーブルのレコードを取得
+        sales = Sales.objects.filter(product_id=request.data['product']).aggregate(quantity_sum=Coalesce(Sum('quantity'), 0)) # 卸しテーブルのレコードを取得
+
+        # 在庫が売る分の数量を超えている場合はエラーレスポンスを返す
+        if purchase['quantity_sum'] < (sales['quantity_sum'] + int(request.data['quantity'])):
+            raise BusinessException('在庫数量を超過することはできません')
+
+        serializer.save()
+        return Response(serializer.data, status.HTTP_201_CREATED)
